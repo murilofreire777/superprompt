@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Teleprompter Web</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #0e141b;
+      --panel-2: #111925;
+      --fg: #eaf2ff;
+      --muted: #9bb0c9;
+      --accent: #36c2ff;
+      --accent-2: #a6e1ff;
+      --guide: rgba(54, 194, 255, 0.18);
+      --danger: #ff4d6d;
+      --ok: #21d19f;
+      --inner-width: 60ch; /* ajustável pelo slider */
+      --radius: 16px;
+    }
+
+    /* Tema claro opcional */
+    :root.light {
+      --bg: #fafcff;
+      --panel: #ffffff;
+      --panel-2: #f4f7fb;
+      --fg: #0b0f14;
+      --muted: #445a73;
+      --accent: #007acc;
+      --accent-2: #58b7ff;
+      --guide: rgba(0, 122, 204, 0.18);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px clamp(12px, 2.5vw, 24px);
+      background: linear-gradient(180deg, var(--panel), transparent);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    header h1 {
+      font-size: clamp(16px, 2.2vw, 20px);
+      margin: 0 8px 0 0;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 14px;
+    }
+
+    .spacer { flex: 1; }
+
+    .btn {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: var(--panel-2);
+      color: var(--fg);
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform .05s ease, background .2s ease, border-color .2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+    }
+    .btn:hover { background: color-mix(in oklab, var(--panel-2) 80%, var(--accent-2)); }
+    .btn:active { transform: translateY(1px); }
+    .btn[aria-pressed="true"] {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent);
+    }
+    .btn.primary { background: var(--accent); color: #001018; border-color: transparent; }
+    .btn.danger { background: color-mix(in oklab, var(--danger) 85%, var(--panel-2)); }
+
+    .segmented {
+      display: inline-flex;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--panel-2);
+    }
+    .segmented button { border: none; border-right: 1px solid rgba(255,255,255,0.06); }
+    .segmented button:last-child { border-right: none; }
+
+    .control {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px 12px;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 12px;
+      background: var(--panel-2);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .control label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+    .control output { font-variant-numeric: tabular-nums; min-width: 5ch; text-align: right; }
+    .control input[type="range"] { accent-color: var(--accent); width: min(60vw, 320px); }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr minmax(420px, 1fr);
+      gap: 16px;
+      padding: 12px clamp(12px, 2.5vw, 24px) 16px;
+      min-height: 0; /* allow children to size */
+    }
+
+    @media (max-width: 1000px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: linear-gradient(180deg, var(--panel-2), color-mix(in oklab, var(--panel-2) 85%, #000));
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: var(--radius);
+      overflow: hidden;
+      min-height: 40vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel h2 {
+      font-size: 14px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: linear-gradient(180deg, var(--panel), transparent);
+    }
+
+    textarea {
+      resize: none;
+      width: 100%;
+      height: 100%;
+      padding: 16px;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--fg);
+      font-size: clamp(16px, 1.8vw, 18px);
+      line-height: 1.6;
+      white-space: pre-wrap;
+      caret-color: var(--accent);
+    }
+
+    /* ===== Teleprompter Stage ===== */
+    .stage-wrap { position: relative; flex: 1; min-height: 40vh; }
+
+    #stage {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+      scroll-behavior: auto; /* manual control */
+      display: flex;
+      justify-content: center; /* mantém o bloco de texto sempre no centro horizontal */
+      align-items: flex-start;
+      padding: clamp(24px, 6vh, 64px) clamp(12px, 3vw, 32px);
+      background: var(--panel);
+      border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 48px; /* controlado pelo slider */
+      line-height: 1.6; /* controlado pelo slider */
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Conteúdo que rola */
+    #scrollText {
+      width: min(92vw, var(--inner-width));
+      margin: 0 auto; /* garante centro horizontal */
+      text-align: center; /* centraliza o texto (útil para leitura em prompter) */
+    }
+
+    #scrollText p { margin: 0 0 1em 0; }
+
+    /* Barra guia na linha central */
+    .guide {
+      position: sticky;
+      top: 50%;
+      transform: translateY(-50%);
+      height: clamp(36px, 6vh, 52px);
+      background: linear-gradient(180deg, transparent 0%, var(--guide) 40%, var(--guide) 60%, transparent 100%);
+      pointer-events: none;
+      z-index: 2;
+      border-radius: 12px;
+    }
+
+    /* Overlays sutis */
+    .overlay {
+      position: absolute; inset: 0; display: grid; place-items: center; z-index: 6;
+      background: rgba(0,0,0,0.45);
+      backdrop-filter: blur(2px);
+      font-weight: 800; letter-spacing: 0.04em;
+      text-transform: uppercase; color: #fff;
+    }
+    .hidden { display: none !important; }
+
+    .countdown { font-size: clamp(48px, 10vw, 120px); }
+
+    /* Efeitos utilitários do palco */
+    #stage.mirror { transform: scaleX(-1); }
+    #stage.noguide .guide { display: none; }
+
+    /* Rodapé de dicas */
+    footer {
+      padding: 8px clamp(12px, 2.5vw, 24px) 18px;
+      color: var(--muted);
+      font-size: 13px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center;
+    }
+
+    .kbd { border: 1px solid rgba(255,255,255,0.18); background: var(--panel-2); padding: 2px 6px; border-radius: 8px; font-weight: 600; color: var(--fg); }
+
+    /* Modo compacto: esconde UI para leitura limpa */
+    body.compact header, body.compact .editor-panel, body.compact footer { display: none; }
+    body.compact main { padding-top: 0; }
+
+    /* Botão flutuante para reexibir UI */
+    #floatingUIBtn {
+      position: fixed; z-index: 10; right: 12px; bottom: 12px;
+      opacity: 0; pointer-events: none; transition: opacity .2s ease;
+    }
+    body.compact #floatingUIBtn { opacity: 1; pointer-events: auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Teleprompter Web</h1>
+    <div class="toolbar" role="group" aria-label="Controles principais">
+      <button id="playBtn" class="btn primary" aria-pressed="false">▶️ Iniciar</button>
+      <button id="pauseBtn" class="btn" disabled>⏸️ Pausar</button>
+      <button id="resetBtn" class="btn" title="Voltar ao topo">⏮️ Reset</button>
+
+      <div class="spacer"></div>
+
+      <div class="control" title="Velocidade do scroll (px/s)">
+        <label for="speed">Velocidade</label>
+        <input id="speed" type="range" min="0" max="500" step="1" value="80" />
+        <output id="speedOut">80 px/s</output>
+      </div>
+
+      <div class="control" title="Tamanho da fonte">
+        <label for="fontSize">Fonte</label>
+        <input id="fontSize" type="range" min="24" max="120" step="1" value="48" />
+        <output id="fontSizeOut">48 px</output>
+      </div>
+
+      <div class="control" title="Altura da linha">
+        <label for="lineHeight">Espaço</label>
+        <input id="lineHeight" type="range" min="1.2" max="2.4" step="0.05" value="1.6" />
+        <output id="lineHeightOut">1.60</output>
+      </div>
+
+      <div class="control" title="Largura do bloco de texto">
+        <label for="textWidth">Largura</label>
+        <input id="textWidth" type="range" min="40" max="90" step="1" value="60" />
+        <output id="textWidthOut">60 ch</output>
+      </div>
+
+      <button id="fullscreenBtn" class="btn" title="Tela cheia (F)">⛶ Tela cheia</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel editor-panel" aria-label="Editor de texto">
+      <h2>Texto</h2>
+      <textarea id="editor" placeholder="Cole ou digite seu texto aqui...\n\nDicas:\n• Use Enter duplo para separar parágrafos.\n• Atalhos: Espaço = Play/Pause, ↑/↓ = velocidade, [ / ] = fonte, M = espelhar, G = guia, H = esconder UI.\n\nExemplo:\nBem-vinda(o) ao Teleprompter Web!\nRespire fundo.\nMantenha o ritmo confortável.\nAjuste a velocidade conforme necessário.\nBoa gravação!"></textarea>
+    </section>
+
+    <section class="panel" aria-label="Palco do teleprompter">
+      <h2>Palco</h2>
+      <div class="stage-wrap">
+        <div id="stage" class="noguide" role="region" aria-label="Área de rolagem do teleprompter">
+          <div id="scrollText">
+            <div class="guide" aria-hidden="true"></div>
+            <div id="content"></div>
+            <p style="margin: 40vh 0 0 0; opacity: .2; font-size: 0.6em;">— fim —</p>
+          </div>
+        </div>
+        <div id="overlay" class="overlay hidden"><div class="countdown" id="countdown">3</div></div>
+      </div>
+
+      <div style="display:flex; flex-wrap: wrap; gap: 10px; padding: 10px; border-top: 1px solid rgba(255,255,255,0.06); background: var(--panel);">
+        <div class="segmented" role="group" aria-label="Opções visuais">
+          <button id="toggleMirror" class="btn" aria-pressed="false" title="Espelhar horizontal (M)">🪞 Espelhar</button>
+          <button id="toggleGuide" class="btn" aria-pressed="false" title="Mostrar linha-guia (G)">📏 Guia</button>
+          <button id="toggleTheme" class="btn" aria-pressed="false" title="Inverter tema (claro/escuro) (I)">🌓 Tema</button>
+          <button id="toggleLoop" class="btn" aria-pressed="false" title="Reiniciar ao final">🔁 Loop</button>
+        </div>
+
+        <div class="spacer"></div>
+
+        <div class="segmented" role="group" aria-label="Alinhamento do texto">
+          <button class="btn" data-align="left" title="Alinhar à esquerda">⬅️</button>
+          <button class="btn" data-align="center" aria-pressed="true" title="Centralizar">↔️</button>
+          <button class="btn" data-align="justify" title="Justificar">⤢</button>
+        </div>
+
+        <button id="hideUIBtn" class="btn" title="Esconder interface para leitura limpa (H)">🫥 Modo leitura</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div><strong>Atalhos:</strong> <span class="kbd">Espaço</span> Play/Pause · <span class="kbd">↑/↓</span> Velocidade · <span class="kbd">[</span>/<span class="kbd">]</span> Fonte · <span class="kbd">M</span> Espelhar · <span class="kbd">G</span> Guia · <span class="kbd">I</span> Tema · <span class="kbd">F</span> Tela Cheia · <span class="kbd">H</span> Ocultar UI</div>
+  </footer>
+
+  <button id="floatingUIBtn" class="btn" title="Mostrar interface">🎛️ Mostrar controles</button>
+
+  <script>
+    const editor = document.getElementById('editor');
+    const content = document.getElementById('content');
+    const stage = document.getElementById('stage');
+    const overlay = document.getElementById('overlay');
+    const countdownEl = document.getElementById('countdown');
+
+    const playBtn = document.getElementById('playBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+    const speed = document.getElementById('speed');
+    const speedOut = document.getElementById('speedOut');
+    const fontSize = document.getElementById('fontSize');
+    const fontSizeOut = document.getElementById('fontSizeOut');
+    const lineHeight = document.getElementById('lineHeight');
+    const lineHeightOut = document.getElementById('lineHeightOut');
+    const textWidth = document.getElementById('textWidth');
+    const textWidthOut = document.getElementById('textWidthOut');
+
+    const toggleMirror = document.getElementById('toggleMirror');
+    const toggleGuide = document.getElementById('toggleGuide');
+    const toggleTheme = document.getElementById('toggleTheme');
+    const toggleLoop = document.getElementById('toggleLoop');
+
+    const hideUIBtn = document.getElementById('hideUIBtn');
+    const floatingUIBtn = document.getElementById('floatingUIBtn');
+
+    const alignButtons = document.querySelectorAll('[data-align]');
+
+    const state = {
+      playing: false,
+      pxPerSec: 80,
+      lastTs: 0,
+      countdown: 3,
+      loop: false
+    };
+
+    // ===== Persistência simples (localStorage) =====
+    const save = () => {
+      const data = {
+        text: editor.value,
+        pxPerSec: +speed.value,
+        fontSize: +fontSize.value,
+        lineHeight: +lineHeight.value,
+        width: +textWidth.value,
+        mirror: stage.classList.contains('mirror'),
+        guide: !stage.classList.contains('noguide'),
+        light: document.documentElement.classList.contains('light')
+      };
+      localStorage.setItem('teleprompter-web', JSON.stringify(data));
+    };
+
+    const load = () => {
+      const raw = localStorage.getItem('teleprompter-web');
+      if (!raw) return;
+      try {
+        const data = JSON.parse(raw);
+        if (data.text != null) editor.value = data.text;
+        if (data.pxPerSec != null) speed.value = data.pxPerSec;
+        if (data.fontSize != null) fontSize.value = data.fontSize;
+        if (data.lineHeight != null) lineHeight.value = data.lineHeight;
+        if (data.width != null) textWidth.value = data.width;
+        if (data.mirror) stage.classList.add('mirror');
+        if (data.guide) stage.classList.remove('noguide');
+        if (data.light) document.documentElement.classList.add('light');
+      } catch {}
+    };
+
+    // ===== Renderização do texto =====
+    function renderText() {
+      // mantém o bloco centralizado horizontalmente; usa <div> com white-space: pre-wrap
+      content.textContent = editor.value || '';
+    }
+
+    // ===== Controles visuais =====
+    function updateSpeed(v) {
+      state.pxPerSec = +v;
+      speedOut.textContent = `${state.pxPerSec} px/s`;
+    }
+    function updateFontSize(v) {
+      stage.style.fontSize = `${v}px`;
+      fontSizeOut.textContent = `${v} px`;
+    }
+    function updateLineHeight(v) {
+      stage.style.lineHeight = v;
+      lineHeightOut.textContent = (+v).toFixed(2);
+    }
+    function updateWidth(ch) {
+      document.documentElement.style.setProperty('--inner-width', ch + 'ch');
+      textWidthOut.textContent = `${ch} ch`;
+    }
+
+    // ===== Play/Pause/Reset =====
+    function animate(ts) {
+      if (!state.playing) return;
+      if (!state.lastTs) state.lastTs = ts;
+      const dt = (ts - state.lastTs) / 1000;
+      state.lastTs = ts;
+      stage.scrollTop += state.pxPerSec * dt;
+
+      const atBottom = stage.scrollTop >= stage.scrollHeight - stage.clientHeight - 2;
+      if (atBottom) {
+        if (state.loop) {
+          stage.scrollTo({ top: 0 });
+        } else {
+          togglePlay(false);
+        }
+      } else {
+        requestAnimationFrame(animate);
+      }
+    }
+
+    function countdownThenStart() {
+      overlay.classList.remove('hidden');
+      let n = state.countdown;
+      countdownEl.textContent = n;
+      const tick = () => {
+        n -= 1;
+        if (n <= 0) {
+          overlay.classList.add('hidden');
+          startScrolling();
+        } else {
+          countdownEl.textContent = n;
+          setTimeout(tick, 1000);
+        }
+      };
+      setTimeout(tick, 1000);
+    }
+
+    function startScrolling() {
+      state.lastTs = 0;
+      state.playing = true;
+      playBtn.setAttribute('aria-pressed', 'true');
+      pauseBtn.disabled = false;
+      requestAnimationFrame(animate);
+    }
+
+    function togglePlay(force) {
+      if (typeof force === 'boolean') state.playing = force;
+      else state.playing = !state.playing;
+
+      if (state.playing) {
+        startScrolling();
+      } else {
+        playBtn.setAttribute('aria-pressed', 'false');
+        pauseBtn.disabled = true;
+      }
+    }
+
+    function reset() {
+      state.playing = false;
+      state.lastTs = 0;
+      stage.scrollTo({ top: 0, behavior: 'auto' });
+      playBtn.setAttribute('aria-pressed', 'false');
+      pauseBtn.disabled = true;
+    }
+
+    // ===== Eventos UI =====
+    playBtn.addEventListener('click', () => {
+      if (state.playing) return; // já tocando
+      // se estamos no topo, faz contagem regressiva sutil
+      if (Math.round(stage.scrollTop) <= 0) countdownThenStart();
+      else startScrolling();
+    });
+    pauseBtn.addEventListener('click', () => togglePlay(false));
+    resetBtn.addEventListener('click', reset);
+
+    speed.addEventListener('input', (e) => { updateSpeed(e.target.value); save(); });
+    fontSize.addEventListener('input', (e) => { updateFontSize(e.target.value); save(); });
+    lineHeight.addEventListener('input', (e) => { updateLineHeight(e.target.value); save(); });
+    textWidth.addEventListener('input', (e) => { updateWidth(e.target.value); save(); });
+
+    toggleMirror.addEventListener('click', () => {
+      const on = stage.classList.toggle('mirror');
+      toggleMirror.setAttribute('aria-pressed', on);
+      save();
+    });
+    toggleGuide.addEventListener('click', () => {
+      const off = stage.classList.toggle('noguide');
+      toggleGuide.setAttribute('aria-pressed', !off);
+      save();
+    });
+    toggleTheme.addEventListener('click', () => {
+      const on = document.documentElement.classList.toggle('light');
+      toggleTheme.setAttribute('aria-pressed', on);
+      save();
+    });
+    toggleLoop.addEventListener('click', () => {
+      state.loop = !state.loop;
+      toggleLoop.setAttribute('aria-pressed', state.loop);
+      save();
+    });
+
+    fullscreenBtn.addEventListener('click', async () => {
+      try {
+        if (!document.fullscreenElement) {
+          await (document.documentElement.requestFullscreen?.() || stage.requestFullscreen?.());
+        } else {
+          await document.exitFullscreen?.();
+        }
+      } catch (e) { console.warn(e); }
+    });
+
+    hideUIBtn.addEventListener('click', () => {
+      document.body.classList.add('compact');
+    });
+    floatingUIBtn.addEventListener('click', () => {
+      document.body.classList.remove('compact');
+    });
+
+    alignButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        alignButtons.forEach(b => b.setAttribute('aria-pressed', 'false'));
+        btn.setAttribute('aria-pressed', 'true');
+        const align = btn.dataset.align;
+        document.getElementById('scrollText').style.textAlign = align === 'justify' ? 'justify' : align;
+      });
+    });
+
+    // Atualiza conteúdo ao digitar (e salva)
+    editor.addEventListener('input', () => { renderText(); save(); });
+
+    // ===== Teclas de atalho =====
+    document.addEventListener('keydown', (e) => {
+      if (e.target === editor && (e.key !== 'Escape')) return; // não interferir ao digitar
+      const prevent = () => { e.preventDefault(); e.stopPropagation(); };
+      switch (e.key) {
+        case ' ': prevent(); state.playing ? togglePlay(false) : startScrolling(); break;
+        case 'ArrowUp': prevent(); speed.value = Math.min(+speed.max, +speed.value + 10); speed.dispatchEvent(new Event('input')); break;
+        case 'ArrowDown': prevent(); speed.value = Math.max(+speed.min, +speed.value - 10); speed.dispatchEvent(new Event('input')); break;
+        case '[': prevent(); fontSize.value = Math.max(+fontSize.min, +fontSize.value - 2); fontSize.dispatchEvent(new Event('input')); break;
+        case ']': prevent(); fontSize.value = Math.min(+fontSize.max, +fontSize.value + 2); fontSize.dispatchEvent(new Event('input')); break;
+        case 'm': case 'M': prevent(); toggleMirror.click(); break;
+        case 'g': case 'G': prevent(); toggleGuide.click(); break;
+        case 'i': case 'I': prevent(); toggleTheme.click(); break;
+        case 'f': case 'F': prevent(); fullscreenBtn.click(); break;
+        case 'h': case 'H': prevent(); document.body.classList.toggle('compact'); break;
+        case 'Escape': document.body.classList.remove('compact'); break;
+      }
+    });
+
+    // Pausar ao clicar/tocar no palco
+    stage.addEventListener('pointerdown', () => { if (state.playing) togglePlay(false); });
+
+    // ===== Inicialização =====
+    load();
+    // ativa estados iniciais dos toggles baseados nas classes aplicadas
+    toggleMirror.setAttribute('aria-pressed', stage.classList.contains('mirror'));
+    toggleGuide.setAttribute('aria-pressed', !stage.classList.contains('noguide'));
+    toggleTheme.setAttribute('aria-pressed', document.documentElement.classList.contains('light'));
+    toggleLoop.setAttribute('aria-pressed', state.loop);
+
+    updateSpeed(speed.value);
+    updateFontSize(fontSize.value);
+    updateLineHeight(lineHeight.value);
+    updateWidth(textWidth.value);
+    renderText();
+
+    // Salva antes de sair
+    window.addEventListener('beforeunload', save);
+  </script>
+</body>
+</html>
